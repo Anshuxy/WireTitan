@@ -1,40 +1,100 @@
 # WireTitan Architecture
 
-## Topology
+## 1. System Topology
 
-Client
-↓
-Mac 1 - DNS Server (dnsmasq)
-↓
-Mac 2 - nginx (Reverse Proxy + Load Balancer + HTTPS)
-↓
-Backend A / Backend B
+WireTitan consists of two backend services running on separate machines/processes, with nginx acting as the HTTPS reverse proxy and load balancer.
 
-## Machine Roles
+```text
+                         Client
+                           |
+                           | HTTPS :8443
+                           | app.wiretitan.test
+                           v
+                    +----------------+
+                    |     nginx      |
+                    | HTTPS / TLS   |
+                    | Reverse Proxy |
+                    | Load Balancer |
+                    |    + Cache     |
+                    +-------+--------+
+                            |
+                    +-------+-------+
+                    |               |
+                    v               v
+          +----------------+  +----------------+
+          |   Backend A    |  |   Backend B    |
+          | 10.7.6.126     |  | 127.0.0.1     |
+          |     :3001      |  |     :3002      |
+          +----------------+  +----------------+
 
-| Machine | Role | Service | Port |
-|---|---|---|---|
-| Mac 1 | DNS Server | dnsmasq | 53 |
-| Mac 2 | Edge / Load Balancer | nginx | 8443 |
-| Mac 3 | Backend A | Node.js | 3001 |
-| Mac 4 | Backend B | Node.js | 3002 |
+DNS:
+  app.wiretitan.test
+  api.wiretitan.test
+        |
+        v
+     dnsmasq
+```
 
-## IP / Port Table
+The nginx configuration uses Backend A at `10.7.6.126:3001` and Backend B at `127.0.0.1:3002`. nginx serves HTTPS on port `8443` for `app.wiretitan.test`, performs reverse proxying/load balancing, and provides HTTP caching.
 
-| Machine | IP Address | Service | Port |
-|---|---|---|---|
-| Mac 1 | YOUR_IP | dnsmasq | 53 |
-| Mac 2 | YOUR_IP | nginx | 8443 |
-| Mac 3 | 10.7.6.126 | Backend A | 3001 |
-| Mac 4 | YOUR_IP | Backend B | 3002 |
+## 2. Machine / Service Roles
 
-## Request Flow
+| Machine / Service | Role                                                                                                                                      |
+| ----------------- | ----------------------------------------------------------------------------------------------------------------------------------------- |
+| Client            | Sends HTTPS requests to the WireTitan application.                                                                                        |
+| dnsmasq           | Provides local DNS resolution for `app.wiretitan.test` and `api.wiretitan.test`.                                                          |
+| nginx             | Terminates TLS, accepts HTTPS traffic on port `8443`, reverse-proxies requests, load-balances between the backends, and performs caching. |
+| Backend A         | REST backend service listening on `10.7.6.126:3001`.                                                                                      |
+| Backend B         | REST backend service listening on `127.0.0.1:3002`.                                                                                       |
 
-1. Client requests app.wiretitan.test.
-2. DNS query goes to Mac 1.
-3. Mac 1 resolves app.wiretitan.test to Mac 2.
-4. Client connects to nginx on Mac 2 using HTTPS.
-5. nginx receives the HTTPS request.
-6. nginx forwards the request to Backend A or Backend B.
-7. Backend sends the response to nginx.
-8. nginx sends the response back to the client.
+The project requires both backend applications to remain simple REST services.
+
+## 3. IP / Port Table
+
+| Component | IP / Host            |   Port | Purpose                                                |
+| --------- | -------------------- | -----: | ------------------------------------------------------ |
+| Backend A | `10.7.6.126`         | `3001` | REST backend                                           |
+| Backend B | `127.0.0.1`          | `3002` | REST backend                                           |
+| nginx     | `app.wiretitan.test` | `8443` | HTTPS entry point / reverse proxy                      |
+| DNS       | Local dnsmasq        |    DNS | Resolves `app.wiretitan.test` and `api.wiretitan.test` |
+
+The documented nginx upstream endpoints are `10.7.6.126:3001` for Backend A and `127.0.0.1:3002` for Backend B; nginx exposes HTTPS on `8443`.
+
+> **Note:** The guide says to document the relevant Mac IPs for the DNS configuration, but it does not provide every machine's IP address in the document. Do not invent any additional IP addresses; replace/add them here once they are confirmed from the team's actual configuration.
+
+## 4. Request Flow
+
+A typical application request follows this path:
+
+1. The client requests `app.wiretitan.test`.
+2. Local DNS resolution through dnsmasq resolves the WireTitan hostname to the appropriate machine/IP.
+3. The client establishes an HTTPS connection to nginx on port `8443`.
+4. nginx terminates the TLS connection using the configured TLS certificate.
+5. nginx checks its cache for the requested resource.
+6. If the response is cached, nginx can return the cached response.
+7. If the response is not cached, nginx forwards the request through its upstream configuration to one of the backend services:
+
+   * Backend A: `10.7.6.126:3001`
+   * Backend B: `127.0.0.1:3002`
+8. The selected backend processes the REST request and returns the response to nginx.
+9. nginx can cache the response according to its caching configuration.
+10. nginx returns the HTTP response to the client over the established HTTPS connection.
+
+The evidence requirements specifically include repeated requests demonstrating load balancing between Backend A and Backend B (`X-Backend: A` / `X-Backend: B`) and caching behavior showing `X-Cache-Status: MISS` followed by `HIT`.
+
+## 5. DNS Names
+
+The architecture uses the following local DNS names:
+
+* `app.wiretitan.test`
+* `api.wiretitan.test`
+
+These names should be configured through the project's `dns/dnsmasq.conf`.
+
+## 6. TLS and Security
+
+TLS is terminated at nginx. The nginx configuration contains the TLS certificate configuration, and the project includes documentation describing the local CA/certificate setup and client trust configuration.
+
+Private keys and secrets must not be committed to the repository. In particular, files such as `wiretitan-ca.key` and `app.wiretitan.test.key`, along with passwords and tokens, must remain private.
+
+
