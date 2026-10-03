@@ -5,8 +5,8 @@
 Private Network Service Platform — Phase 1
 
 ### Team
-- Anshu
-- [Teammate Name]
+- Anshu Yadav
+- Farhan Pervin 
 
 ### Phase 1 Components
 - Private DNS Server
