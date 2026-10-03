@@ -235,5 +235,5 @@ WireTitan/
 └── evidence/
 ```
 
-Before pushing the repository, verify that both backend source codes, DNS/nginx configuration, TLS notes, and evidence are present, and that no private keys or secrets are included.
+
 
