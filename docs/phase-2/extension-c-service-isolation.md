@@ -10,7 +10,7 @@ Restrict backend access so that only authorised traffic (via the nginx edge) can
 
 Backend A (`backend-a/server.js`) listens on `0.0.0.0:3001` so Mac 2's nginx can reach it across the LAN.
 
-It applies application-level access control: requests that do not carry the `X-Forwarded-For` header (set by nginx) are rejected with `HTTP 403 Forbidden`. Direct HTTP requests bypass the proxy header and are blocked.
+It applies application-level source IP filtering (not PF firewall enforcement) by checking the TCP peer address via `req.socket.remoteAddress` (handling IPv4-mapped IPv6 addresses such as `::ffff:10.7.3.20`). Only requests arriving from the Mac 2 primary nginx IP (`10.7.3.20`) are allowed; requests from other source IPs (including direct requests from Mac 1) are rejected with `HTTP 403 Forbidden`. Client-supplied HTTP headers such as `X-Forwarded-For` or `X-Real-IP` are not trusted as proof of identity.
 
 ### Backend B – Bind-Address Isolation
 

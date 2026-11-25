@@ -317,6 +317,8 @@ curl -s -i http://10.7.10.202:3001/api/status
 curl -k -i --connect-timeout 3 https://127.0.0.1:8444/api/status
 ```
 
+> **TLS Validation Note:** Commands above using `curl -k` verify HTTPS connectivity only while skipping certificate validation. To demonstrate certificate trust, use `curl --cacert <path-to-wiretitan-ca.crt> https://app.wiretitan.test:8443/api/status` (see [tls/README.md](tls/README.md)).
+
 ---
 
 ## Repository Structure

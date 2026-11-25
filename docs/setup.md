@@ -111,12 +111,14 @@ node server.js
 
 The primary nginx configuration is `nginx/phase-2/primary.conf`.
 
-Adjust the certificate paths in the configuration file to match the actual certificate location on this Mac. The default paths assume Homebrew nginx:
+Adjust the certificate paths in the configuration file to match the actual certificate location on this Mac. As an example, Mac 2's Homebrew nginx configuration used:
 
 ```
 ssl_certificate     /opt/homebrew/etc/nginx/certs/app.wiretitan.test.crt;
 ssl_certificate_key /opt/homebrew/etc/nginx/certs/app.wiretitan.test.key;
 ```
+
+*(Replace with your host's actual certificate paths; portable examples use `<PATH_TO_CERTS>/...` placeholders.)*
 
 > **Never commit the private key file to the repository.**
 

@@ -61,7 +61,7 @@ lsof -nP -iTCP:3002 -sTCP:LISTEN
 
 This is **expected behaviour** for Extension C.
 
-Backend A applies application-level access filtering. Requests that do not arrive through the nginx proxy are rejected with `HTTP 403 Forbidden`. To test via nginx, use the HTTPS endpoint: `https://app.wiretitan.test:8443/api/status`.
+Backend A applies application-level source IP filtering (`req.socket.remoteAddress`, allowing only Mac 2 primary nginx at `10.7.3.20`). Requests from other source IPs that bypass the primary nginx edge are rejected with `HTTP 403 Forbidden`. To test via nginx, use the HTTPS endpoint: `https://app.wiretitan.test:8443/api/status`.
 
 ---
 
@@ -97,8 +97,8 @@ Common issues:
 **Problem:** HTTPS request fails with certificate error.
 
 **Fix:**
-- Use `curl -k` to skip certificate verification during testing (acceptable for local private network).
-- For verified HTTPS, install the local CA certificate in macOS Keychain and set trust to "Always Trust".
+- `curl -k` skips certificate verification and only verifies HTTPS connectivity (never claim certificate validation succeeded from a `curl -k` response).
+- To verify and demonstrate certificate trust, use `curl --cacert <path-to-wiretitan-ca.crt> https://app.wiretitan.test:8443/api/status` or install the local CA certificate in macOS Keychain and set trust to "Always Trust".
 - See `tls/README.md` for CA setup.
 
 ---

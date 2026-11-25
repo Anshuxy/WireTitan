@@ -19,7 +19,7 @@ Server: nginx/1.31.6
 
 nginx cannot reach either backend and returns `502 Bad Gateway`. This is a network-layer proxy error, not an application error.
 
-Evidence: `evidence/phase-2/extension-f/extension-f-both-backends-down.png`
+Evidence: `evidence/phase-2/extension-b/extension-b-record-change.png` (command and `HTTP/1.1 502 Bad Gateway` headers at bottom) and `evidence/phase-2/extension-f/extension-f-both-backends-down.png` (continuation of 502 HTML body at top)
 
 ### 2. Backend Recovery → HTTP 200 OK
 
@@ -32,9 +32,9 @@ HTTP/1.1 200 OK
 X-Backend: A
 ```
 
-nginx detected the available backends and resumed normal operation.
+After both backends were restarted, the same endpoint returned `HTTP 200 OK`.
 
-Evidence: `evidence/phase-2/extension-f/extension-f-both-backends-down.png` (same screenshot, continuation)
+Evidence: `evidence/phase-2/extension-f/extension-f-both-backends-down.png`
 
 ### 3. Wrong Destination Port → Connection Failure
 

@@ -4,7 +4,7 @@
 
 Extension C verified service isolation using two mechanisms:
 
-1. **Application-level filtering (Backend A):** Direct HTTP requests to Backend A on Mac 1 that do not arrive through the nginx proxy are rejected with `HTTP 403 Forbidden`.
+1. **Application-level filtering (Backend A):** Direct HTTP requests to Backend A on Mac 1 from non-edge source IPs (not Mac 2 `10.7.3.20` via `req.socket.remoteAddress`) are rejected with `HTTP 403 Forbidden`.
 2. **Bind-address isolation (Backend B):** Backend B binds to `127.0.0.1:3002` only. Mac 1 cannot connect to it remotely.
 
 ## Screenshots
@@ -12,7 +12,7 @@ Extension C verified service isolation using two mechanisms:
 | File | Machine | What It Shows |
 |---|---|---|
 | `extension-c-backend-a-direct-403.png` | Mac 1 (white terminal) | Direct `curl http://10.7.10.202:3001/api/status` → HTTP 403, `{"error":"Access denied"}`; also shows Mac 1 attempt to reach Backend B at 10.7.3.20:3002 → `curl error (7) Failed to connect` |
-| `extension-c-backend-b-listener-and-reach.png` | Mac 2 (dark terminal) | `lsof` shows Backend B listening on `127.0.0.1:3002`; Mac 2 reaches Backend A at 10.7.10.202:3001 → HTTP 200 |
+| `extension-c-backend-b-listener-and-reach.png` | Mac 2 (dark terminal) | `lsof` shows Backend B listening on `127.0.0.1:3002`; Mac 2 reaches Backend A at 10.7.10.202:3001 → HTTP 200; bottom shows start of `curl` HTTPS check still connecting at capture time |
 
 ## Status
 
