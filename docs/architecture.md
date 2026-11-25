@@ -2,99 +2,108 @@
 
 ## 1. System Topology
 
-WireTitan consists of two backend services running on separate machines/processes, with nginx acting as the HTTPS reverse proxy and load balancer.
+WireTitan is deployed across two Mac computers connected through a shared LAN. The architecture consists of a DNS server, two backend REST services, a primary nginx edge on Mac 2, and a standby nginx edge on Mac 1.
 
 ```text
-                         Client
-                           |
-                           | HTTPS :8443
-                           | app.wiretitan.test
-                           v
-                    +----------------+
-                    |     nginx      |
-                    | HTTPS / TLS   |
-                    | Reverse Proxy |
-                    | Load Balancer |
-                    |    + Cache     |
-                    +-------+--------+
-                            |
-                    +-------+-------+
-                    |               |
-                    v               v
-          +----------------+  +----------------+
-          |   Backend A    |  |   Backend B    |
-          | 10.7.6.126     |  | 127.0.0.1     |
-          |     :3001      |  |     :3002      |
-          +----------------+  +----------------+
+                    Client
+                      │
+              DNS Query (UDP/TCP :53)
+                      │
+                      ▼
+        ┌─────────────────────────────┐
+        │  Mac 1 – Farhana            │
+        │  10.7.10.202                │
+        │                             │
+        │  dnsmasq (port 53)          │
+        │  app.wiretitan.test → 10.7.3.20  │
+        │  api.wiretitan.test → 10.7.3.20  │
+        │  TTL = 30 seconds           │
+        └─────────────────────────────┘
+                      │
+        (DNS resolves app.wiretitan.test → 10.7.3.20)
+                      │
+              HTTPS :8443
+                      ▼
+        ┌─────────────────────────────┐
+        │  Mac 2 – Anshu              │
+        │  10.7.3.20                  │
+        │                             │
+        │  Primary nginx (:8443)      │
+        │  TLS termination            │
+        │  Round-robin load balance   │
+        │  HTTP proxy cache           │
+        └──────────┬──────────────────┘
+                   │
+         ┌─────────┴───────────┐
+         ▼                     ▼
+ Backend A                 Backend B
+ 10.7.10.202:3001          127.0.0.1:3002
+ (Mac 1 – remote)          (Mac 2 – loopback)
 
-DNS:
-  app.wiretitan.test
-  api.wiretitan.test
-        |
-        v
-     dnsmasq
+Additional component:
+
+        ┌─────────────────────────────┐
+        │  Mac 1 – Farhana            │
+        │  Standby nginx (:8443)      │
+        │  Proxies → 10.7.3.20:8443  │
+        │  (NOT independent)          │
+        └─────────────────────────────┘
 ```
-
-The nginx configuration uses Backend A at `10.7.6.126:3001` and Backend B at `127.0.0.1:3002`. nginx serves HTTPS on port `8443` for `app.wiretitan.test`, performs reverse proxying/load balancing, and provides HTTP caching.
 
 ## 2. Machine / Service Roles
 
-| Machine / Service | Role                                                                                                                                      |
-| ----------------- | ----------------------------------------------------------------------------------------------------------------------------------------- |
-| Client            | Sends HTTPS requests to the WireTitan application.                                                                                        |
-| dnsmasq           | Provides local DNS resolution for `app.wiretitan.test` and `api.wiretitan.test`.                                                          |
-| nginx             | Terminates TLS, accepts HTTPS traffic on port `8443`, reverse-proxies requests, load-balances between the backends, and performs caching. |
-| Backend A         | REST backend service listening on `10.7.6.126:3001`.                                                                                      |
-| Backend B         | REST backend service listening on `127.0.0.1:3002`.                                                                                       |
-
-The project requires both backend applications to remain simple REST services.
+| Machine / Service | IP | Port | Role |
+|---|---|---|---|
+| dnsmasq (Mac 1) | `10.7.10.202` | `53` | Private DNS, TTL=30 |
+| Backend A (Mac 1) | `10.7.10.202` | `3001` | REST backend, app-level isolation |
+| Standby nginx (Mac 1) | `10.7.10.202` | `8443` | Alternative HTTPS entry, proxies to Mac 2 |
+| Primary nginx (Mac 2) | `10.7.3.20` | `8443` | HTTPS entry, load balancer, cache |
+| Backend B (Mac 2) | `127.0.0.1` | `3002` | REST backend, loopback-bound only |
 
 ## 3. IP / Port Table
 
-| Component | IP / Host            |   Port | Purpose                                                |
-| --------- | -------------------- | -----: | ------------------------------------------------------ |
-| Backend A | `10.7.6.126`         | `3001` | REST backend                                           |
-| Backend B | `127.0.0.1`          | `3002` | REST backend                                           |
-| nginx     | `app.wiretitan.test` | `8443` | HTTPS entry point / reverse proxy                      |
-| DNS       | Local dnsmasq        |    DNS | Resolves `app.wiretitan.test` and `api.wiretitan.test` |
-
-The documented nginx upstream endpoints are `10.7.6.126:3001` for Backend A and `127.0.0.1:3002` for Backend B; nginx exposes HTTPS on `8443`.
-
-> **Note:** The guide says to document the relevant Mac IPs for the DNS configuration, but it does not provide every machine's IP address in the document. Do not invent any additional IP addresses; replace/add them here once they are confirmed from the team's actual configuration.
+| Component | IP / Host | Port | Protocol | Purpose |
+|---|---|---|---|---|
+| dnsmasq | `10.7.10.202` | `53` | UDP/TCP | Local DNS |
+| Backend A | `10.7.10.202` | `3001` | HTTP | REST service |
+| Backend B | `127.0.0.1` | `3002` | HTTP | REST service (loopback) |
+| Primary nginx | `10.7.3.20` | `8443` | HTTPS | Main edge |
+| Standby nginx | `10.7.10.202` | `8443` | HTTPS | Alt edge (proxy only) |
 
 ## 4. Request Flow
 
-A typical application request follows this path:
-
-1. The client requests `app.wiretitan.test`.
-2. Local DNS resolution through dnsmasq resolves the WireTitan hostname to the appropriate machine/IP.
-3. The client establishes an HTTPS connection to nginx on port `8443`.
-4. nginx terminates the TLS connection using the configured TLS certificate.
-5. nginx checks its cache for the requested resource.
-6. If the response is cached, nginx can return the cached response.
-7. If the response is not cached, nginx forwards the request through its upstream configuration to one of the backend services:
-
-   * Backend A: `10.7.6.126:3001`
-   * Backend B: `127.0.0.1:3002`
-8. The selected backend processes the REST request and returns the response to nginx.
-9. nginx can cache the response according to its caching configuration.
-10. nginx returns the HTTP response to the client over the established HTTPS connection.
-
-The evidence requirements specifically include repeated requests demonstrating load balancing between Backend A and Backend B (`X-Backend: A` / `X-Backend: B`) and caching behavior showing `X-Cache-Status: MISS` followed by `HIT`.
+1. Client queries dnsmasq on `10.7.10.202:53` for `app.wiretitan.test`.
+2. dnsmasq returns `10.7.3.20` with TTL=30 seconds.
+3. Client establishes TCP connection to `10.7.3.20:8443`.
+4. nginx on Mac 2 terminates TLS using `app.wiretitan.test` certificate.
+5. nginx checks proxy cache. If `HIT`, returns cached response with `X-Cache-Status: HIT`.
+6. If `MISS`, nginx selects the next backend in round-robin order.
+7. nginx forwards request to Backend A (`10.7.10.202:3001`) or Backend B (`127.0.0.1:3002`).
+8. Backend returns JSON response with `X-Backend: A` or `X-Backend: B` header.
+9. nginx caches the response and returns it to the client with `X-Cache-Status: MISS`.
+10. Client receives `HTTP 200 OK` with JSON body.
 
 ## 5. DNS Names
 
-The architecture uses the following local DNS names:
+| Name | Type | Current Value | TTL |
+|---|---|---|---|
+| `app.wiretitan.test` | A | `10.7.3.20` | 30 s |
+| `api.wiretitan.test` | A | `10.7.3.20` | 30 s |
 
-* `app.wiretitan.test`
-* `api.wiretitan.test`
-
-These names should be configured through the project's `dns/dnsmasq.conf`.
+> During Extension E, `app.wiretitan.test` was temporarily set to `10.7.10.202`. After testing, it was restored to `10.7.3.20`.
 
 ## 6. TLS and Security
 
-TLS is terminated at nginx. The nginx configuration contains the TLS certificate configuration, and the project includes documentation describing the local CA/certificate setup and client trust configuration.
+TLS is terminated at nginx. The certificate `app.wiretitan.test.crt` is signed by a local CA (`wiretitan-ca.crt`). Clients must trust the local CA to establish verified HTTPS connections.
 
-Private keys and secrets must not be committed to the repository. In particular, files such as `wiretitan-ca.key` and `app.wiretitan.test.key`, along with passwords and tokens, must remain private.
+> **Private keys (`*.key`) must never be committed to this repository.**
 
+See `tls/README.md` for CA setup and client trust configuration.
 
+## 7. Standby Edge – Important Limitation
+
+The standby nginx on Mac 1 accepts HTTPS connections but proxies all traffic to the primary nginx on Mac 2 (`https://10.7.3.20:8443`). This means:
+
+- If the primary nginx (Mac 2) is down, the standby edge **cannot** serve requests independently.
+- The standby is an alternative **entry point** only, not a fully independent failover edge.
+- Backends A and B are still reached through the primary nginx on Mac 2.
