@@ -49,7 +49,7 @@ Backend A restarted on Mac 1. 6 requests:
 B, B, A, B, A, B
 ```
 
-nginx detected the restored backend and resumed round-robin distribution.
+After Backend A was restarted, A/B distribution resumed across repeated requests.
 
 Evidence: `evidence/phase-2/extension-d/extension-d-backend-recovery.png`
 

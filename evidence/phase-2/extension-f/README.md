@@ -12,9 +12,9 @@ Extension F verified three failure and recovery scenarios:
 
 | File | Machine | What It Shows |
 |---|---|---|
-| `extension-f-both-backends-down.png` | Mac 2 (dark terminal) | Composite screenshot: DNS record change (dscacheutil showing 10.7.10.202 → 10.7.3.20); `curl https://127.0.0.1:8443` → HTTP 502; recovery → HTTP 200; `curl https://127.0.0.1:8444` → curl error 7 |
+| `extension-f-both-backends-down.png` | Mac 2 (dark terminal) | Continuation of the `502 Bad Gateway` HTML response body at top; `curl -k -i https://127.0.0.1:8443/api/status` after backend recovery → `HTTP/1.1 200 OK` (`X-Backend: A`); Wi-Fi DNS restored to `1.1.1.1 10.0.0.1`; `curl -k -i https://127.0.0.1:8444/api/status` → `curl: (7) Failed to connect` |
 
-> Note: The `extension-f-both-backends-down.png` screenshot is a composite that also contains Extension B DNS record change evidence. For the specific 502/200/wrong-port sequence, see the lower portion of this image.
+> Note: The preceding `curl -k -i --connect-timeout 5 https://127.0.0.1:8443/api/status` command and `HTTP/1.1 502 Bad Gateway` response headers appear at the bottom of `../extension-b/extension-b-record-change.png`. `extension-f-both-backends-down.png` continues that terminal scrollback with the HTML body, recovery `HTTP 200 OK`, DNS restore, and port `8444` connection failure.
 
 ## Status
 

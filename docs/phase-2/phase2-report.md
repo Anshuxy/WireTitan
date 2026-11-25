@@ -178,7 +178,7 @@ Restrict access to the backend services so that they are not directly accessible
 
 **Backend A (Mac 1):**
 - Listens on `0.0.0.0:3001` so Mac 2's nginx can reach it across the LAN.
-- Applies application-level source filtering: requests that do not arrive through the nginx proxy (i.e. do not have the `X-Forwarded-For` header set by nginx) are rejected with `HTTP 403 Forbidden`.
+- Applies application-level source IP filtering using the TCP peer address (`req.socket.remoteAddress`, handling IPv4-mapped IPv6 addresses such as `::ffff:10.7.3.20`): only connections from the Mac 2 primary nginx edge (`10.7.3.20`) are allowed, while requests from any other source IP (including direct requests on Mac 1) are rejected with `HTTP 403 Forbidden`. Client-supplied forwarding headers are not trusted as proof of identity. Note that this is application-level filtering, not OS-level PF firewall enforcement.
 
 **Backend B (Mac 2):**
 - Binds to `127.0.0.1:3002` only.
@@ -228,7 +228,7 @@ PF packet-filter firewall rules to enforce isolation at the operating-system lev
 
 ### 7.6 Learning
 
-Service isolation can be implemented at different layers: application code (filtering by header/IP), network binding (loopback vs LAN interface), and OS-level firewall rules. Each layer adds defence in depth. When OS-level rules are unavailable, the application and binding layers still provide meaningful isolation.
+Service isolation can be implemented at different layers: application code (validating the TCP connection source IP `req.socket.remoteAddress`), network binding (loopback vs LAN interface), and OS-level firewall rules. Each layer adds defence in depth. When OS-level rules are unavailable, the application and binding layers still provide meaningful isolation.
 
 ---
 
@@ -283,7 +283,7 @@ Backend A restarted on Mac 1. 6 requests:
 B, B, A, B, A, B
 ```
 
-nginx detected the restored backend and resumed round-robin distribution. The first two responses were `B` while nginx performed its upstream health probe.
+After Backend A was restarted, A/B distribution resumed across repeated requests.
 
 Evidence: `evidence/phase-2/extension-d/extension-d-backend-recovery.png`
 
@@ -297,7 +297,7 @@ The primary nginx on Mac 2 itself remains a single point of failure. If Mac 2 or
 
 ### 8.6 Learning
 
-nginx upstream failover is automatic and low-latency. The transition from A/B distribution to B-only and back to A/B happens within a few seconds of the backend becoming unavailable or available. This demonstrates the value of having multiple upstream backends even on a simple two-machine deployment.
+The failover test demonstrated the distinction between backend redundancy and full-system high availability. With Backend A stopped, nginx continued returning successful responses from Backend B; after Backend A restarted, A/B distribution resumed. This shows resilience to a single backend failure even on a simple two-machine deployment, while leaving the primary nginx edge as a single point of failure.
 
 ---
 
@@ -390,25 +390,25 @@ Test specific failure scenarios and verify that the system returns expected erro
 
 **Both backends down — HTTP 502 (Mac 2 — dark terminal):**
 
-Both Backend A and Backend B stopped. curl to `https://127.0.0.1:8443/api/status`:
+Both Backend A and Backend B stopped. `curl -k -i --connect-timeout 5 https://127.0.0.1:8443/api/status`:
 
 ```
 HTTP/1.1 502 Bad Gateway
 Server: nginx/1.31.6
 ```
 
-Evidence: `evidence/phase-2/extension-f/extension-f-both-backends-down.png`
+Evidence: `evidence/phase-2/extension-b/extension-b-record-change.png` (command and 502 response headers at bottom) and `evidence/phase-2/extension-f/extension-f-both-backends-down.png` (continuation of 502 HTML body at top)
 
 **Backend recovery — HTTP 200 (Mac 2 — dark terminal):**
 
-Both backends restored. curl to `https://127.0.0.1:8443/api/status`:
+Both backends restored. `curl -k -i --connect-timeout 5 https://127.0.0.1:8443/api/status`:
 
 ```
 HTTP/1.1 200 OK
 X-Backend: A
 ```
 
-Same screenshot shows the recovery sequence (502 followed by 200).
+Evidence: `evidence/phase-2/extension-f/extension-f-both-backends-down.png`
 
 **Wrong port — connection failure (Mac 2 — dark terminal):**
 
@@ -420,7 +420,7 @@ curl: (7) Failed to connect to 127.0.0.1 port 8444 after 0 ms
 
 Confirmed that an incorrect port produces a TCP-level connection failure, not an HTTP error.
 
-Same screenshot: `evidence/phase-2/extension-f/extension-f-both-backends-down.png`
+Evidence: `evidence/phase-2/extension-f/extension-f-both-backends-down.png`
 
 ### 10.3 What Was NOT Tested
 
@@ -473,6 +473,7 @@ The distinction between application-level errors (`HTTP 502`) and transport-leve
 | Extension E partial | Standby proxies to primary | Standby is not an independent failover edge |
 | Primary nginx SPOF | Architecture design | Mac 2 failure takes down all services |
 | Client TTL retention | macOS DNS tooling | Old-IP retention observation not achieved |
+| `curl -k` certificate bypass | Phase 2 test commands used `-k` | Verifies HTTPS connectivity only; use `curl --cacert` (or trusted CA) to demonstrate certificate trust |
 
 ---
 

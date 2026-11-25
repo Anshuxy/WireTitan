@@ -12,7 +12,7 @@ Extension B configured `dnsmasq` with `local-ttl=30` and verified that:
 | File | Machine | What It Shows |
 |---|---|---|
 | `extension-b-ttl-30.png` | Mac 1 (white terminal) | `dig @127.0.0.1 app.wiretitan.test` returning TTL=30 and A record 10.7.10.202 (during Extension E migration) |
-| `extension-b-record-change.png` | Mac 2 (dark terminal) | DNS record change: `dscacheutil` showing 10.7.10.202 then 10.7.3.20; also shows DNS resolver set to 10.7.10.202 via `networksetup`; Extension F 502 and recovery also visible in this screenshot |
+| `extension-b-record-change.png` | Mac 2 (dark terminal) | DNS resolver switched to `10.7.10.202` (`networksetup` / `scutil --dns`); `dscacheutil` showing `10.7.10.202` then `10.7.3.20`; also captures the start of the Extension F `HTTP/1.1 502 Bad Gateway` test at the bottom |
 
 ## Status
 
