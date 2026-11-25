@@ -235,5 +235,167 @@ WireTitan/
 └── evidence/
 ```
 
+---
+
+# Phase 2 – Advanced Network Services and High Availability
+
+## 1. Overview
+
+Phase 2 extends the WireTitan private network service platform developed in Phase 1.
+
+The objective is to improve service availability, DNS management, backend isolation, edge migration and failure recovery.
+
+The implementation uses two Mac computers connected through a private network.
+
+## 2. Phase 2 Objectives
+
+The following extensions were investigated:
+
+- Extension A: Backup DNS
+- Extension B: DNS TTL Management
+- Extension C: Service Isolation
+- Extension D: High Availability and Backend Failover
+- Extension E: Edge Migration
+- Extension F: Troubleshooting and Failure Testing
+
+## 3. Updated Architecture
+
+WireTitan uses the following components:
+
+| Component | Technology |
+|---|---|
+| DNS service | dnsmasq |
+| Reverse proxy | Nginx |
+| Backend A | Node.js and Express |
+| Backend B | Node.js and Express |
+| HTTPS | TLS/SSL |
+| Load balancing | Nginx upstream |
+| DNS testing | dig |
+| HTTP testing | curl |
+| Repository management | Git and GitHub |
+
+Application hostname:
+
+`app.wiretitan.test`
+
+HTTPS port:
+
+`8443`
+
+DNS TTL:
+
+`30 seconds`
+
+## 4. Phase 2 Extensions
+
+### Extension A – Backup DNS
+
+Investigated an alternative DNS resolution path to improve DNS availability.
+
+Remote backup DNS validation was restricted by the university-managed network firewall.
+
+### Extension B – DNS TTL Management
+
+Configured dnsmasq with a local TTL of 30 seconds.
+
+Verified DNS records and tested hostname migration using dig.
+
+### Extension C – Service Isolation
+
+Investigated application-level access restrictions and network binding to limit unnecessary backend exposure.
+
+Full PF firewall enforcement could not be completed in the managed environment.
+
+### Extension D – High Availability and Failover
+
+Used Nginx upstream configuration to distribute requests between Backend A and Backend B.
+
+Tested backend availability, failure and recovery.
+
+### Extension E – Edge Migration
+
+Tested DNS-based migration of the application hostname between the two edge services.
+
+Verified HTTPS access after updating the DNS record.
+
+The standby edge currently retains an upstream dependency on the primary edge.
+
+### Extension F – Troubleshooting
+
+Performed failure testing involving:
+
+- Both backends unavailable.
+- HTTP 502 Bad Gateway.
+- Backend recovery.
+- Incorrect destination port.
+- DNS resolution and migration.
+
+## 5. Testing and Verification
+
+The following results were observed during testing:
+
+| Test | Result |
+|---|---|
+| DNS resolution | Successful |
+| DNS TTL configuration | 30 seconds |
+| DNS record migration | Verified |
+| HTTPS application access | HTTP 200 OK |
+| Backend A/B responses | Verified |
+| Both backends unavailable | HTTP 502 |
+| Backend recovery | HTTP 200 OK |
+| Incorrect destination port | Connection failure |
+
+## 6. Repository Structure
+
+```text
+WireTitan/
+│
+├── backend-a/
+├── backend-b/
+├── dns/
+│   ├── dnsmasq.conf
+│   └── phase2-dns-config.conf
+│
+├── docs/
+│   └── phase-2/
+│       ├── phase2-report.md
+│       ├── extension-a-backup-dns.md
+│       ├── extension-b-dns-ttl.md
+│       ├── extension-c-service-isolation.md
+│       ├── extension-d-ha-failover.md
+│       ├── extension-e-edge-migration.md
+│       ├── extension-f-troubleshooting.md
+│       └── phase2-architecture.png
+│
+├── evidence/
+├── nginx/
+│   ├── nginx.conf
+│   ├── primary.conf
+│   └── standby.conf
+│
+├── tls/
+├── .gitignore
+└── README.md
+```
+
+## 7. Limitations
+
+The following limitations were encountered:
+
+1. Remote backup DNS validation was restricted by the university-managed firewall.
+2. Client-side DNS cache persistence was not fully demonstrated.
+3. PF firewall enforcement could not be completed in the managed environment.
+4. The standby nginx edge currently depends on the primary nginx upstream.
+
+These limitations are documented to distinguish completed implementation from incomplete validation.
+
+## 8. Conclusion
+
+Phase 2 extends WireTitan with DNS TTL management, backend load balancing, failure recovery, edge migration and troubleshooting.
+
+The project demonstrates how multiple network services can work together to improve application availability and reliability.
+
+The implementation and testing evidence are maintained in this repository for documentation, verification and future improvements.
+
 
 
