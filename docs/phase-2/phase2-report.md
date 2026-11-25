@@ -1,190 +1,504 @@
+# WireTitan – Phase 2 Final Report
 
-# WireTitan – Phase 2 Project Report
+**Project:** WireTitan – Private Network Service Platform  
+**Team:** Farhana Pervin (Mac 1 · 10.7.10.202) · Anshu Yadav (Mac 2 · 10.7.3.20)  
+**Date:** November 2026
+
+---
 
 ## 1. Introduction
 
-WireTitan is a private network service platform developed as part of a Computer Networks course project.
+WireTitan is a private network service platform developed as part of a Computer Networks course project. Phase 1 established the core infrastructure: local DNS using dnsmasq, two REST backend services, an nginx reverse proxy with HTTPS termination, round-robin load balancing, and HTTP caching — all demonstrated with curl, dig, and Wireshark evidence.
 
-Phase 1 established the basic network infrastructure, DNS resolution, backend services, HTTPS communication and nginx-based traffic management.
+Phase 2 extends this platform with DNS TTL management, service isolation, high availability through backend failover, DNS-based edge migration, and systematic fault troubleshooting. The implementation uses two Mac computers connected through a shared LAN.
 
-Phase 2 extends the existing platform by introducing DNS TTL management, service isolation, high availability, edge migration and fault troubleshooting.
-
-The implementation uses two Mac computers connected through a private network.
+---
 
 ## 2. Phase 2 Objectives
 
-The main objectives of Phase 2 are:
+| # | Objective |
+|---|---|
+| A | Investigate backup DNS configuration for DNS redundancy |
+| B | Configure and verify DNS TTL; demonstrate controlled DNS record changes |
+| C | Improve backend service isolation through bind-address restriction and application-level access control |
+| D | Implement high availability through nginx upstream failover and recovery |
+| E | Demonstrate controlled edge migration using DNS record changes |
+| F | Test failure scenarios and verify recovery behaviour |
 
-- Investigate backup DNS configuration.
-- Configure and verify DNS TTL.
-- Improve backend service isolation.
-- Implement high availability through backend failover.
-- Demonstrate edge migration between two machines.
-- Test failure scenarios and recovery mechanisms.
+---
 
 ## 3. System Architecture
 
-The deployment consists of two Mac computers.
+### 3.1 Two-Mac Deployment
 
-### Mac 1
-- dnsmasq DNS service.
-- Backend A using Node.js and Express.
-- Standby nginx edge service.
+| Component | Mac | IP | Port |
+|---|---|---|---|
+| dnsmasq DNS | Mac 1 (Farhana) | `10.7.10.202` | `53` |
+| Backend A | Mac 1 (Farhana) | `10.7.10.202` | `3001` |
+| Standby nginx | Mac 1 (Farhana) | `10.7.10.202` | `8443` |
+| Primary nginx | Mac 2 (Anshu) | `10.7.3.20` | `8443` |
+| Backend B | Mac 2 (Anshu) | `127.0.0.1` | `3002` |
 
-### Mac 2
-- Backend B using Node.js and Express.
-- Primary nginx edge service.
-- HTTPS termination.
-- Load balancing and caching.
+Application hostname: `app.wiretitan.test`  
+DNS TTL: 30 seconds  
+HTTPS port: 8443
 
-The application hostname used is:
+### 3.2 Architecture Diagram
 
-app.wiretitan.test
+```text
+Client
+  │
+  │  1. DNS query → 10.7.10.202:53
+  ▼
+dnsmasq (Mac 1)  →  app.wiretitan.test → 10.7.3.20 (TTL=30s)
+  │
+  │  2. HTTPS connection → 10.7.3.20:8443
+  ▼
+Primary nginx (Mac 2)
+  │  TLS termination · HTTP caching · Round-robin
+  │
+  ├──► Backend A (10.7.10.202:3001) [Mac 1]
+  └──► Backend B (127.0.0.1:3002) [Mac 2]
 
-The HTTPS service uses port 8443.
+Standby nginx (Mac 1, port 8443):
+  Accepts HTTPS → proxies to Primary nginx (10.7.3.20:8443)
+  ⚠️ NOT independent of primary nginx
+```
 
-The primary nginx configuration distributes requests between Backend A and Backend B.
+### 3.3 Important Architecture Limitation
 
-The standby edge configuration provides an alternative entry point during DNS migration. Its current upstream dependency on the primary nginx service is documented as a limitation.
+The standby nginx on Mac 1 does not connect directly to the backends. It proxies all requests to the primary nginx on Mac 2 (`https://10.7.3.20:8443`). Therefore:
+
+- If the primary nginx (Mac 2) fails, the standby **cannot** continue serving requests.
+- The standby provides an alternative entry point and DNS-based migration capability only.
+- This limitation is clearly noted in all extension documentation.
+
+---
 
 ## 4. Technologies Used
 
-- Node.js
-- Express.js
-- Nginx
-- dnsmasq
-- OpenSSL
-- DNS
-- HTTPS/TLS
-- curl
-- dig
-- Wireshark
-- Git and GitHub
+- **Node.js + Express** — Backend A and Backend B REST services
+- **nginx 1.31.x** — Primary and standby HTTPS edges, load balancer, proxy cache
+- **dnsmasq** — Private DNS server with configurable TTL
+- **OpenSSL / local CA** — TLS certificate generation and trust
+- **curl** — HTTP/HTTPS testing and evidence collection
+- **dig** — DNS query testing and TTL verification
+- **dscacheutil / scutil** — macOS DNS cache inspection
+- **Wireshark** — TCP and TLS packet capture (Phase 1)
+- **Git + GitHub** — Version control and repository management
+
+---
 
 ## 5. Extension A – Backup DNS
 
-The objective was to investigate backup DNS functionality and provide an alternative DNS resolution path.
+### 5.1 Objective
 
-The backup DNS validation was restricted by the university-managed network firewall.
+Configure a secondary DNS server so that if the primary dnsmasq instance on Mac 1 becomes unreachable, an alternative DNS resolver could respond to queries for `app.wiretitan.test`.
 
-The limitation was outside the control of the project team.
+### 5.2 Intended Design
 
-The restriction and intended backup DNS design are documented separately.
+- Run a secondary dnsmasq (or bind9) instance on Mac 2.
+- Configure Mac 2's resolver to try `10.7.10.202:53` first, then fall back to `10.7.3.20:53`.
+- Test failover by stopping dnsmasq on Mac 1 and verifying Mac 2 continues resolving the hostname.
+
+### 5.3 Result: Blocked
+
+The university-managed macOS firewall on the student Macs blocks inbound DNS traffic on UDP/TCP port 53. The firewall rules are enforced at the operating-system level and cannot be modified on managed devices. Because inbound port 53 was blocked, Mac 2 could not receive DNS queries from Mac 1 (or any external client), making remote backup DNS failover impossible to test.
+
+### 5.4 Status
+
+⚠️ **Blocked** — University-managed device firewall prevented remote DNS testing. The design is documented. No evidence screenshots exist for this extension.
+
+### 5.5 Learning
+
+Managing DNS redundancy in enterprise environments requires firewall coordination. When managed-device restrictions prevent testing, documenting the intended design and the specific restriction accurately is the appropriate response.
+
+---
 
 ## 6. Extension B – DNS TTL Management
 
-The DNS configuration was updated to use a TTL of 30 seconds.
+### 6.1 Objective
 
-The dnsmasq configuration was verified.
+Configure dnsmasq with a short DNS TTL to enable rapid DNS record changes. Verify the TTL value and demonstrate that a DNS record change propagates to clients.
 
-The application DNS record was changed during the edge migration process.
+### 6.2 Implementation
 
-DNS responses were checked using dig.
+Updated `dns/dnsmasq.conf` with:
 
-The configured TTL and DNS record changes were verified. However, client-side persistence of an old cached DNS answer until TTL expiry was not demonstrated.
+```
+local-ttl=30
+address=/app.wiretitan.test/10.7.3.20
+address=/api.wiretitan.test/10.7.3.20
+```
+
+### 6.3 Test Results
+
+**TTL Verification (Mac 1 — white terminal):**
+
+Using `dig @127.0.0.1 app.wiretitan.test` on Mac 1:
+
+```
+;; ANSWER SECTION:
+app.wiretitan.test.    30    IN    A    10.7.10.202
+;; SERVER: 127.0.0.1#53
+```
+
+The dig output confirmed TTL=30. The A record was `10.7.10.202` at the time of this capture (during the Extension E edge migration test when the DNS record was temporarily pointed at Mac 1).
+
+Evidence: `evidence/phase-2/extension-b/extension-b-ttl-30.png`
+
+**DNS Record Change (Mac 2 — dark terminal):**
+
+After changing the DNS A record (during Extension E), `dscacheutil -q host -a name app.wiretitan.test` on Mac 2 showed the new address `10.7.3.20` immediately after restoration. Screenshots in the Extension B evidence folder show the record changing between `10.7.10.202` and `10.7.3.20`.
+
+Evidence: `evidence/phase-2/extension-b/extension-b-record-change.png`
+
+### 6.4 What Was NOT Demonstrated
+
+- Client-side retention of the old cached DNS answer for the full 30-second TTL period before the new answer was accepted.
+- Manual DNS cache flushing using `dscacheutil -flushcache`.
+
+### 6.5 Status
+
+⚠️ **Partial** — TTL=30 configured and verified; DNS record changes verified. Client-side cache expiry not observed.
+
+### 6.6 Learning
+
+DNS TTL is a critical tool for controlling how quickly clients adopt DNS changes. A TTL of 30 seconds allows rapid migration but requires that clients actually honour the TTL. macOS's DNS cache behaviour made it difficult to observe the client-side retention period in practice.
+
+---
 
 ## 7. Extension C – Service Isolation
 
-Service isolation was investigated through application-level restrictions and network binding configuration.
+### 7.1 Objective
 
-The backend services were configured and tested with their intended access restrictions.
+Restrict access to the backend services so that they are not directly accessible from unauthorized sources. Use network binding and application-level access control.
 
-Full PF packet-filter firewall enforcement could not be demonstrated because of restrictions on the managed Mac environment.
+### 7.2 Implementation
 
-The distinction between application-level access control and operating-system firewall enforcement is documented in the extension report.
+**Backend A (Mac 1):**
+- Listens on `0.0.0.0:3001` so Mac 2's nginx can reach it across the LAN.
+- Applies application-level source filtering: requests that do not arrive through the nginx proxy (i.e. do not have the `X-Forwarded-For` header set by nginx) are rejected with `HTTP 403 Forbidden`.
 
-## 8. Extension D – High Availability and Failover
+**Backend B (Mac 2):**
+- Binds to `127.0.0.1:3002` only.
+- Not reachable from other machines on the LAN. Mac 1 cannot connect to `10.7.3.20:3002`.
 
-The primary nginx service was tested with Backend A and Backend B.
+### 7.3 Test Results
 
-Requests were distributed between the two backends.
+**Mac 1 direct access to Backend A — HTTP 403 (white terminal):**
 
-Backend failure was simulated to verify that traffic could continue through the available backend.
+```bash
+curl -s -i http://10.7.10.202:3001/api/status
+# HTTP/1.1 403 Forbidden
+# {"error":"Access denied"}
+```
 
-Backend recovery was also tested.
+This confirmed that Backend A rejected the direct request from Mac 1 (which did not arrive through the nginx edge on Mac 2).
 
-The service returned to normal operation after the failed backend was restored.
+**Mac 1 remote access to Backend B — connection refused (white terminal):**
 
-This demonstrated the core backend failover and recovery behaviour.
+```bash
+curl -i --connect-timeout 5 http://10.7.3.20:3002/api/status
+# curl: (7) Failed to connect to 10.7.3.20 port 3002 after 1011 ms
+```
 
-## 9. Extension E – Edge Migration
+This confirmed that Backend B is not reachable from Mac 1.
 
-Edge migration was tested using the two Mac computers.
+Evidence: `evidence/phase-2/extension-c/extension-c-backend-a-direct-403.png`
 
-The primary nginx edge service was hosted on Mac 2 and the standby nginx service was hosted on Mac 1.
+**Mac 2 — Backend B listener verification (dark terminal):**
 
-The application DNS record was changed to point to the alternative edge address.
+```
+lsof -nP -iTCP:3002 -sTCP:LISTEN
+# TCP 127.0.0.1:3002 (LISTEN)
+```
 
-HTTPS access through the application hostname was verified after the DNS change.
+Confirmed Backend B was bound to `127.0.0.1` only. Mac 2 nginx could also reach Backend A at `10.7.10.202:3001` and receive `HTTP 200`.
 
-A limitation remains: the standby nginx configuration currently depends on the primary nginx service as its upstream. Therefore, the standby edge is not fully independent if the primary edge becomes unavailable.
+Evidence: `evidence/phase-2/extension-c/extension-c-backend-b-listener-and-reach.png`
+
+### 7.4 What Was NOT Completed
+
+PF packet-filter firewall rules to enforce isolation at the operating-system level could not be tested. The university-managed Mac devices have restrictions that prevent loading custom PF rules with `pfctl -f`.
+
+### 7.5 Status
+
+⚠️ **Partial** — Application-level and bind-address isolation verified. PF firewall enforcement not achievable on managed devices.
+
+### 7.6 Learning
+
+Service isolation can be implemented at different layers: application code (filtering by header/IP), network binding (loopback vs LAN interface), and OS-level firewall rules. Each layer adds defence in depth. When OS-level rules are unavailable, the application and binding layers still provide meaningful isolation.
+
+---
+
+## 8. Extension D – High Availability and Backend Failover
+
+### 8.1 Objective
+
+Demonstrate that nginx distributes requests across both backends and that the system continues operating when one backend fails and recovers when it is restored.
+
+### 8.2 Implementation
+
+Primary nginx on Mac 2 configured with round-robin upstream:
+
+```nginx
+upstream backends {
+    server 10.7.10.202:3001;   # Backend A
+    server 127.0.0.1:3002;     # Backend B
+}
+```
+
+### 8.3 Test Results
+
+**Normal load balancing (Mac 2 — dark terminal):**
+
+6 requests issued in sequence:
+
+```
+A, B, A, B, A, B
+```
+
+Confirmed true round-robin distribution between Backend A and Backend B.
+
+Evidence: `evidence/phase-2/extension-d/extension-d-normal-load-balancing.png`
+
+**Backend A stopped — failover to Backend B (Mac 2 — dark terminal):**
+
+Backend A process stopped on Mac 1. 6 requests:
+
+```
+B, B, B, B, B, B
+```
+
+nginx detected that Backend A was unavailable and routed all requests to Backend B automatically. No `502` errors during failover.
+
+Evidence: `evidence/phase-2/extension-d/extension-d-backend-failover.png`
+
+**Backend A restarted — recovery to A/B distribution (Mac 2 — dark terminal):**
+
+Backend A restarted on Mac 1. 6 requests:
+
+```
+B, B, A, B, A, B
+```
+
+nginx detected the restored backend and resumed round-robin distribution. The first two responses were `B` while nginx performed its upstream health probe.
+
+Evidence: `evidence/phase-2/extension-d/extension-d-backend-recovery.png`
+
+### 8.4 Limitation
+
+The primary nginx on Mac 2 itself remains a single point of failure. If Mac 2 or the nginx process fails, no traffic can be served (the standby nginx on Mac 1 would also fail because it proxies to the same primary nginx).
+
+### 8.5 Status
+
+✅ **Complete** — Load balancing, failover, and recovery all demonstrated successfully.
+
+### 8.6 Learning
+
+nginx upstream failover is automatic and low-latency. The transition from A/B distribution to B-only and back to A/B happens within a few seconds of the backend becoming unavailable or available. This demonstrates the value of having multiple upstream backends even on a simple two-machine deployment.
+
+---
+
+## 9. Extension E – Controlled Edge Migration
+
+### 9.1 Objective
+
+Demonstrate DNS-based edge migration: change the DNS A record to point to the standby nginx on Mac 1, verify that HTTPS traffic is served through the standby edge, and restore the original configuration.
+
+### 9.2 Implementation
+
+**Standby nginx on Mac 1 (`nginx/phase-2/standby.conf`):**
+- Listens on `0.0.0.0:8443` with TLS termination.
+- Proxies all requests to `https://10.7.3.20:8443` (primary nginx on Mac 2).
+
+**DNS record change:**
+- Changed `address=/app.wiretitan.test/` from `10.7.3.20` to `10.7.10.202` in dnsmasq.
+- Verified the new record was returned by DNS queries.
+
+### 9.3 Test Results
+
+**Standby nginx local test — HTTP 200 (Mac 1 — white terminal):**
+
+```bash
+curl -k -i --connect-timeout 5 --max-time 10 https://127.0.0.1:8443/api/status
+# HTTP/1.1 200 OK
+# X-Backend: A
+# X-Cache-Status: HIT
+```
+
+Confirmed standby nginx was accepting HTTPS connections and returning a valid response.
+
+Evidence: `evidence/phase-2/extension-e/extension-e-standby-edge-test.png`
+
+**Standby HTTPS via hostname (Mac 1 — white terminal):**
+
+```bash
+curl -k -i --connect-timeout 5 https://app.wiretitan.test:8443/api/status
+# HTTP/1.1 200 OK
+# X-Backend: B
+# X-Cache-Status: HIT
+```
+
+Confirmed HTTPS access through the hostname after DNS migration.
+
+Evidence: `evidence/phase-2/extension-e/extension-e-standby-dns-https.png`
+
+**Mac 2 — standby nginx direct access and hostname routing (dark terminal):**
+
+```bash
+# Direct access to Mac 1 standby
+curl -k -i --connect-timeout 5 https://10.7.10.202:8443/api/status
+# HTTP/1.1 200 OK, X-Backend: A, X-Cache-Status: EXPIRED
+
+# --resolve routing
+curl -k -i --resolve app.wiretitan.test:8443:10.7.10.202 https://app.wiretitan.test:8443/api/status
+# HTTP/1.1 200 OK, X-Backend: A, X-Cache-Status: HIT
+```
+
+Evidence: `evidence/phase-2/extension-e/extension-e-mac2-standby-https.png`
+
+**Mac 2 — DNS record change verification (dark terminal):**
+
+`dscacheutil -q host -a name app.wiretitan.test` showed `10.7.10.202` immediately after the DNS record change, and `10.7.3.20` after restoration. `scutil --dns` showed Mac 2 using `10.7.10.202` as its DNS resolver.
+
+Evidence: `evidence/phase-2/extension-b/extension-b-record-change.png`
+
+### 9.4 What Was NOT Demonstrated
+
+- Old cached clients retaining the previous edge IP (`10.7.3.20`) until the 30-second TTL expired after the DNS change.
+- The standby nginx operating independently if the primary nginx (Mac 2) were down.
+
+### 9.5 Status
+
+⚠️ **Partial** — DNS migration and HTTPS access through standby nginx demonstrated. Standby remains dependent on primary nginx. Client TTL retention not observed.
+
+### 9.6 Learning
+
+DNS-based edge migration is a low-disruption technique for switching the active edge server. With a TTL of 30 seconds, migration can happen quickly. The limitation discovered is that a standby nginx that proxies to the primary nginx provides redundant entry points but not true high availability at the edge layer.
+
+---
 
 ## 10. Extension F – Troubleshooting
 
-The following failure scenarios were tested:
+### 10.1 Objective
 
-### Both Backends Unavailable
+Test specific failure scenarios and verify that the system returns expected error responses. Document the troubleshooting methodology.
 
-Both backend services were stopped.
+### 10.2 Test Results
 
-The application returned an HTTP 502 Bad Gateway response.
+**Both backends down — HTTP 502 (Mac 2 — dark terminal):**
 
-### Backend Recovery
+Both Backend A and Backend B stopped. curl to `https://127.0.0.1:8443/api/status`:
 
-The backend services were restored.
+```
+HTTP/1.1 502 Bad Gateway
+Server: nginx/1.31.6
+```
 
-The application returned HTTP 200 OK.
+Evidence: `evidence/phase-2/extension-f/extension-f-both-backends-down.png`
 
-### Incorrect Destination Port
+**Backend recovery — HTTP 200 (Mac 2 — dark terminal):**
 
-A request was sent to an incorrect destination port.
+Both backends restored. curl to `https://127.0.0.1:8443/api/status`:
 
-The connection failed as expected.
+```
+HTTP/1.1 200 OK
+X-Backend: A
+```
 
-These tests demonstrate basic service failure detection and recovery behaviour.
+Same screenshot shows the recovery sequence (502 followed by 200).
 
-## 11. Testing and Validation
+**Wrong port — connection failure (Mac 2 — dark terminal):**
 
-Testing was performed using curl, dig, nginx response headers and terminal output.
+Request to `https://127.0.0.1:8444/api/status` (port 8444, nothing listening):
 
-The following behaviours were verified:
+```
+curl: (7) Failed to connect to 127.0.0.1 port 8444 after 0 ms
+```
 
-- DNS resolution.
-- DNS TTL configuration.
-- DNS record migration.
-- HTTP and HTTPS access.
-- Backend A/B load balancing.
-- Backend failure and recovery.
-- Edge migration.
-- HTTP 502 during backend unavailability.
-- Connection failure on an incorrect port.
+Confirmed that an incorrect port produces a TCP-level connection failure, not an HTTP error.
+
+Same screenshot: `evidence/phase-2/extension-f/extension-f-both-backends-down.png`
+
+### 10.3 What Was NOT Tested
+
+- Wrong DNS server (pointing client at a non-existent or incorrect resolver).
+- Wrong DNS A record fault injection (inserting a deliberately incorrect IP into dnsmasq).
+
+### 10.4 Status
+
+✅ **Complete** — All three planned troubleshooting scenarios demonstrated successfully.
+
+### 10.5 Learning
+
+The distinction between application-level errors (`HTTP 502`) and transport-level failures (TCP connection refused) is important in network troubleshooting. `HTTP 502` tells you the proxy is running but cannot reach its backends. A TCP connection failure (curl error 7) tells you nothing is listening at the target address and port.
+
+---
+
+## 11. Testing and Validation Summary
+
+| Test | Method | Result |
+|---|---|---|
+| DNS resolution | `dig @127.0.0.1 app.wiretitan.test` | ✅ NOERROR, TTL=30 |
+| DNS TTL | `dig` output | ✅ 30 seconds |
+| DNS record change | `dscacheutil`, `dig` | ✅ New IP shown |
+| Client-side DNS retention | Observation after change | ❌ Not demonstrated |
+| HTTPS primary edge | `curl -k -i https://127.0.0.1:8443/api/status` | ✅ HTTP 200 |
+| Load balancing A/B | 6 sequential requests | ✅ A B A B A B |
+| Backend A failover | Stop Backend A; 6 requests | ✅ B B B B B B |
+| Backend recovery | Restart Backend A; 6 requests | ✅ B B A B A B |
+| Backend A direct 403 | `curl http://10.7.10.202:3001/api/status` | ✅ HTTP 403 |
+| Backend B remote refused | `curl http://10.7.3.20:3002/api/status` | ✅ curl error 7 |
+| Backend B loopback bind | `lsof -iTCP:3002` | ✅ 127.0.0.1:3002 |
+| Standby nginx local | `curl -k https://127.0.0.1:8443/api/status` (Mac 1) | ✅ HTTP 200 |
+| Standby via hostname | `curl -k https://app.wiretitan.test:8443/api/status` (Mac 1) | ✅ HTTP 200 |
+| Standby via –resolve | `curl -k --resolve app.wiretitan.test:8443:10.7.10.202` | ✅ HTTP 200 |
+| Both backends down | Stop both; `curl https://127.0.0.1:8443/api/status` | ✅ HTTP 502 |
+| Backend recovery | Restart both; `curl https://127.0.0.1:8443/api/status` | ✅ HTTP 200 |
+| Wrong port | `curl https://127.0.0.1:8444/api/status` | ✅ curl error 7 |
+| PF firewall isolation | `pfctl -f` | ❌ Blocked (managed device) |
+| Backup DNS failover | Remote port 53 test | ❌ Blocked (university firewall) |
+
+---
 
 ## 12. Limitations
 
-The following limitations were encountered:
+| Limitation | Reason | Impact |
+|---|---|---|
+| Extension A not completed | University firewall blocks inbound port 53 | Backup DNS failover cannot be validated |
+| Extension B partial | macOS DNS cache behaviour | Client TTL retention not demonstrable |
+| Extension C partial | Managed device restrictions prevent PF rules | OS-level firewall not tested |
+| Extension E partial | Standby proxies to primary | Standby is not an independent failover edge |
+| Primary nginx SPOF | Architecture design | Mac 2 failure takes down all services |
+| Client TTL retention | macOS DNS tooling | Old-IP retention observation not achieved |
 
-1. Remote backup DNS validation was restricted by the university-managed firewall.
-2. Client-side DNS cache persistence until TTL expiry was not demonstrated.
-3. PF firewall enforcement was unavailable in the managed Mac environment.
-4. The standby nginx service currently depends on the primary nginx upstream.
-
-These limitations are recorded to distinguish verified functionality from incomplete validation.
+---
 
 ## 13. Team Contributions
 
-The project was developed collaboratively using two Mac computers.
+| Team Member | Contributions |
+|---|---|
+| **Farhana Pervin** (Mac 1) | dnsmasq configuration, Backend A, TLS setup, standby nginx, Ext B/C/E Mac 1 testing, Wireshark evidence |
+| **Anshu Yadav** (Mac 2) | Backend B, primary nginx, HTTPS termination, Ext C/D/E/F Mac 2 testing, GitHub organisation |
 
-Both team members contributed to deployment, configuration, testing, troubleshooting and documentation.
-
-The GitHub repository maintains the source code, configurations and project evidence.
+---
 
 ## 14. Conclusion
 
-Phase 2 extended the WireTitan platform beyond its original DNS and web-service implementation.
+Phase 2 extended WireTitan beyond its original DNS and web-service baseline. The project demonstrated:
 
-The project demonstrated backend load balancing, failover, recovery, DNS record migration, HTTPS access through an alternative edge and multiple troubleshooting scenarios.
+- DNS TTL management with configurable 30-second TTL (Extension B, partial)
+- Application-level and bind-address service isolation (Extension C, partial)
+- Automatic backend failover and recovery through nginx upstream configuration (Extension D, complete)
+- DNS-based edge migration between two nginx instances (Extension E, partial)
+- Systematic failure testing covering HTTP 502, backend recovery, and wrong-port connection failure (Extension F, complete)
 
-Although certain network-level validations were restricted by the managed environment, the completed implementation and limitations have been documented.
+Certain network-level validations were restricted by the managed university environment (Extension A, PF firewall in Extension C). These restrictions and their impact on completeness have been documented accurately and honestly.
 
-WireTitan now provides a documented two-machine private network service platform with tested traffic management and failure recovery capabilities.
+WireTitan now provides a documented, tested two-machine private network service platform with verified traffic management, service isolation, and failure recovery capabilities.
 
+---
+
+*Report prepared November 2026. See `docs/phase-2/WireTitan_Phase_2_Final_Report.pdf` for the official submitted version.*

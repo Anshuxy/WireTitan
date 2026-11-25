@@ -1,97 +1,83 @@
+# Extension E – Controlled Edge Migration
 
-# Extension E – Edge Migration
+## Objective
 
-## 1. Objective
+Demonstrate DNS-based edge migration: change the DNS A record to route traffic through the standby nginx on Mac 1 instead of the primary nginx on Mac 2. Verify HTTPS access and backend responses through the standby edge.
 
-The objective of this extension is to demonstrate migration of the application entry point between two edge nginx services hosted on separate Mac computers.
+## Implementation
 
-The application should remain accessible through its hostname after the DNS record is updated.
+### Standby nginx on Mac 1
 
-## 2. Existing Architecture
+Configured `nginx/phase-2/standby.conf` on Mac 1 (`10.7.10.202`):
 
-The deployment uses two Mac computers.
+- Listens on `0.0.0.0:8443` with TLS termination.
+- Proxies all requests upstream to `https://10.7.3.20:8443` (primary nginx on Mac 2).
 
-### Mac 1
-- dnsmasq DNS service.
-- Backend A.
-- Standby nginx edge service.
+> **Important limitation:** The standby nginx is not an independent edge. It proxies to the primary nginx on Mac 2. If Mac 2 is unavailable, the standby cannot serve requests.
 
-### Mac 2
-- Backend B.
-- Primary nginx edge service.
-- HTTPS termination.
-- Load balancing.
+### DNS Record Change
 
-The application hostname is:
-
-app.wiretitan.test
-
-The HTTPS service uses port 8443.
-
-## 3. Primary Edge Configuration
-
-The primary nginx service receives HTTPS requests and distributes application traffic between the configured backend services.
-
-The primary edge was tested using the application hostname.
-
-## 4. Standby Edge Configuration
-
-A standby nginx service was configured on the other Mac computer.
-
-The standby edge was tested using its network address and HTTPS endpoint.
-
-The standby configuration provides an alternative edge entry point for DNS migration.
-
-## 5. DNS Migration
-
-The DNS A record for the application hostname was changed to point to the alternative edge address.
-
-The updated DNS record was verified using dig.
-
-The application hostname was then tested over HTTPS.
-
-Example command:
-
-```bash
-curl -k -i --connect-timeout 5 \
-https://app.wiretitan.test:8443/api/status
+Changed `dns/dnsmasq.conf`:
+```
+address=/app.wiretitan.test/10.7.10.202   # temporary (during migration test)
 ```
 
-The application returned HTTP 200 OK during the successful verification.
+After testing, restored to:
+```
+address=/app.wiretitan.test/10.7.3.20
+```
 
-## 6. Cross-Machine Verification
+## Test Results
 
-DNS and HTTPS access were tested across the two Mac computers.
+### Standby nginx local test (Mac 1)
 
-The hostname resolution and application response were inspected.
+```bash
+curl -k -i --connect-timeout 5 --max-time 10 https://127.0.0.1:8443/api/status
+# HTTP/1.1 200 OK
+# X-Backend: A
+# X-Cache-Status: HIT
+```
 
-The X-Backend response header was used to identify the backend serving the request.
+Evidence: `evidence/phase-2/extension-e/extension-e-standby-edge-test.png`
 
-## 7. Actual Result
+### Standby via hostname (Mac 1)
 
-The following were verified:
+```bash
+curl -k -i --connect-timeout 5 https://app.wiretitan.test:8443/api/status
+# HTTP/1.1 200 OK
+# X-Backend: B
+# X-Cache-Status: HIT
+```
 
-- Primary nginx HTTPS access.
-- Standby nginx service.
-- DNS A-record migration.
-- Cross-machine DNS verification.
-- HTTPS access through the application hostname.
-- Backend response through the migrated edge path.
+Evidence: `evidence/phase-2/extension-e/extension-e-standby-dns-https.png`
 
-## 8. Important Limitation
+### Mac 2 direct access to standby and hostname routing
 
-The standby nginx service currently depends on the primary nginx service as its upstream.
+```bash
+curl -k -i --connect-timeout 5 https://10.7.10.202:8443/api/status
+# HTTP/1.1 200 OK, X-Backend: A, X-Cache-Status: EXPIRED
 
-This means the standby edge is not fully independent.
+curl -k -i --resolve app.wiretitan.test:8443:10.7.10.202 https://app.wiretitan.test:8443/api/status
+# HTTP/1.1 200 OK, X-Backend: A, X-Cache-Status: HIT
+```
 
-If the primary nginx upstream becomes unavailable, the standby edge may also fail to serve application traffic.
+Evidence: `evidence/phase-2/extension-e/extension-e-mac2-standby-https.png`
 
-Therefore, the extension demonstrates edge migration and alternative entry-point testing, but not complete independent edge redundancy.
+### Mac 2 DNS verification
 
-## 9. Conclusion
+`dscacheutil -q host -a name app.wiretitan.test` confirmed:
+- During migration: `ip_address: 10.7.10.202`
+- After restore: `ip_address: 10.7.3.20`
 
-The edge migration extension demonstrated DNS-based movement of the application hostname between edge services.
+`scutil --dns` showed Mac 2 using `10.7.10.202` as its DNS resolver.
 
-HTTPS access was verified after migration.
+Evidence: `evidence/phase-2/extension-b/extension-b-record-change.png`
 
-The remaining upstream dependency is documented as an architectural limitation that should be addressed in a future improvement.
+## What Was NOT Demonstrated
+
+- Clients retaining the old edge IP (`10.7.3.20`) until the 30-second TTL expired after the DNS record change.
+- The standby nginx operating independently if the primary nginx (Mac 2) were offline.
+
+## Status
+
+⚠️ **Partial** — DNS migration, HTTPS access through standby, and hostname routing all verified. Standby nginx is not independent. Client TTL retention not observed.

@@ -1,71 +1,65 @@
-
 # Extension C – Service Isolation
 
-## 1. Objective
+## Objective
 
-The objective of this extension is to improve service isolation by restricting unnecessary access to backend services.
+Restrict backend access so that only authorised traffic (via the nginx edge) can reach the backend services. Demonstrate that direct access from unauthorized sources is blocked.
 
-The aim is to ensure that backend applications are accessed through the intended network path rather than being unnecessarily exposed to other network clients.
+## Implementation
 
-## 2. Existing Infrastructure
+### Backend A – Application-Level Source Filtering
 
-WireTitan uses two Node.js and Express backend services:
+Backend A (`backend-a/server.js`) listens on `0.0.0.0:3001` so Mac 2's nginx can reach it across the LAN.
 
-- Backend A
-- Backend B
+It applies application-level access control: requests that do not carry the `X-Forwarded-For` header (set by nginx) are rejected with `HTTP 403 Forbidden`. Direct HTTP requests bypass the proxy header and are blocked.
 
-Nginx acts as the frontend service and communicates with the backend applications.
+### Backend B – Bind-Address Isolation
 
-The backend services are intended to receive application traffic through the configured service architecture.
+Backend B (`backend-b/server.js`) binds to `127.0.0.1:3002` only. It is not reachable from other machines on the LAN. Mac 1 cannot connect to `10.7.3.20:3002`.
 
-## 3. Isolation Approach
+## Test Results
 
-The project investigated service isolation through:
+### Backend A direct access from Mac 1 → HTTP 403
 
-- Application-level access restrictions.
-- Network interface binding.
-- Restricting backend access to intended communication paths.
-- Separating frontend and backend responsibilities.
+```
+curl -s -i http://10.7.10.202:3001/api/status
+HTTP/1.1 403 Forbidden
+{"error":"Access denied"}
+```
 
-The application-level restrictions and bind-address behaviour were tested.
+Evidence: `evidence/phase-2/extension-c/extension-c-backend-a-direct-403.png`
 
-## 4. Firewall Investigation
+### Backend B remote access from Mac 1 → connection refused
 
-The project also investigated using macOS Packet Filter (PF) to enforce network-level restrictions.
+```
+curl -i --connect-timeout 5 http://10.7.3.20:3002/api/status
+curl: (7) Failed to connect to 10.7.3.20 port 3002 after 1011 ms
+```
 
-However, PF firewall enforcement could not be completed in the managed Mac environment.
+Evidence: `evidence/phase-2/extension-c/extension-c-backend-a-direct-403.png` (same screenshot)
 
-This was an environmental limitation rather than a verified PF implementation.
+### Backend B listener verification on Mac 2
 
-## 5. Testing and Validation
+```
+lsof -nP -iTCP:3002 -sTCP:LISTEN
+# TCP 127.0.0.1:3002 (LISTEN)
+```
 
-The application and network binding behaviour were inspected.
+Evidence: `evidence/phase-2/extension-c/extension-c-backend-b-listener-and-reach.png`
 
-The tests were used to check whether the backend services followed their intended access restrictions.
+### Backend A reachable from Mac 2 nginx → HTTP 200
 
-The available application-level and bind-address controls were verified.
+```
+curl -s -i http://10.7.10.202:3001/api/status
+HTTP/1.1 200 OK
+X-Backend: A
+```
 
-## 6. Actual Result
+Evidence: `evidence/phase-2/extension-c/extension-c-backend-b-listener-and-reach.png`
 
-The following were verified:
+## What Was NOT Completed
 
-- Backend application services.
-- Application-level access restrictions.
-- Bind-address configuration.
-- Communication through the intended service architecture.
+PF packet-filter firewall enforcement (`pfctl -f`) was blocked by managed-device restrictions on the university Macs. OS-level firewall isolation was not tested.
 
-Full operating-system firewall enforcement was not demonstrated.
+## Status
 
-## 7. Limitations
-
-PF firewall enforcement was unavailable in the managed Mac environment.
-
-Therefore, the project does not claim that complete packet-filter-based isolation was implemented.
-
-Application-level restrictions and PF firewall enforcement are treated as separate security mechanisms.
-
-## 8. Conclusion
-
-The service isolation extension demonstrated application-level and bind-address controls.
-
-The PF firewall component remains an incomplete part of the extension because of the restrictions in the managed environment.
+⚠️ **Partial** — Application-level and bind-address isolation verified. PF firewall enforcement was not achievable.

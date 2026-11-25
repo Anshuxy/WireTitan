@@ -1,70 +1,62 @@
+# Extension D – High Availability and Backend Failover
 
-# Extension D – High Availability and Failover
+## Objective
 
-## 1. Objective
+Demonstrate that nginx distributes load across two backends, automatically fails over to the remaining backend when one becomes unavailable, and restores normal distribution when the failed backend recovers.
 
-The objective of this extension is to improve service availability by distributing application requests between multiple backend services.
+## Implementation
 
-The system should continue providing responses when one backend becomes unavailable.
+Primary nginx on Mac 2 (`nginx/phase-2/primary.conf`) uses round-robin upstream:
 
-## 2. Existing Architecture
-
-WireTitan uses two backend applications:
-
-- Backend A – Node.js and Express.
-- Backend B – Node.js and Express.
-
-Nginx operates as the frontend reverse proxy and load balancer.
-
-The backend identity is exposed through the X-Backend response header.
-
-## 3. Load Balancing Implementation
-
-The primary nginx service distributes incoming application requests between Backend A and Backend B.
-
-The application endpoint used for verification is:
-
-/api/status
-
-Example test command:
-
-```bash
-curl -k -i https://app.wiretitan.test:8443/api/status
+```nginx
+upstream backends {
+    server 10.7.10.202:3001;   # Backend A (Mac 1)
+    server 127.0.0.1:3002;     # Backend B (Mac 2 local)
+}
 ```
 
-The response headers were inspected to identify the backend serving each request.
+## Test Results
 
-The X-Backend header identifies whether Backend A or Backend B handled the request.
+### Normal Load Balancing
 
-## 4. Failover Testing
+6 sequential requests to `https://127.0.0.1:8443/api/status`:
 
-Backend failure was simulated by stopping one backend service.
+```
+A, B, A, B, A, B
+```
 
-Requests were then sent to the application through nginx.
+Confirmed true round-robin distribution.
 
-The application continued responding through the available backend.
+Evidence: `evidence/phase-2/extension-d/extension-d-normal-load-balancing.png`
 
-This demonstrated backend failover behaviour.
+### Backend A Stopped – Failover to B
 
-## 5. Backend Recovery
+Backend A process stopped on Mac 1. 6 requests:
 
-The stopped backend service was restarted.
+```
+B, B, B, B, B, B
+```
 
-The application was tested again.
+nginx automatically failed over. No `502` errors during failover.
 
-The service returned to normal operation, and both backend identities were observed after recovery.
+Evidence: `evidence/phase-2/extension-d/extension-d-backend-failover.png`
 
-## 6. Actual Result
+### Backend A Restarted – Recovery to A/B
 
-The following were verified:
+Backend A restarted on Mac 1. 6 requests:
 
-- Requests distributed between Backend A and Backend B.
-- Backend identity visible in response headers.
-- Application availability when one backend was stopped.
-- Recovery after restarting the failed backend.
+```
+B, B, A, B, A, B
+```
 
-## 7. Conclusion
+nginx detected the restored backend and resumed round-robin distribution.
 
-The high availability extension successfully demonstrated load balancing, backend failure handling and recovery.
+Evidence: `evidence/phase-2/extension-d/extension-d-backend-recovery.png`
 
-The tests confirmed that the application could continue responding through the available backend during a single-backend failure.
+## Limitation
+
+The primary nginx on Mac 2 itself remains a single point of failure. If Mac 2 fails, all services become unavailable.
+
+## Status
+
+✅ **Complete** — Load balancing, failover, and recovery all successfully demonstrated.

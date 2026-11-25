@@ -1,86 +1,44 @@
-
 # Extension B – DNS TTL Management
 
-## 1. Objective
+## Objective
 
-The objective of this extension is to configure and verify DNS Time To Live (TTL) and understand how DNS records can be updated during service migration.
+Configure dnsmasq with a short DNS TTL to allow rapid DNS record propagation. Verify the configured TTL and demonstrate that changing the DNS A record is reflected quickly in client queries.
 
-## 2. DNS Configuration
+## Implementation
 
-The WireTitan DNS service uses dnsmasq.
+Updated `dns/dnsmasq.conf`:
 
-The application hostname is:
-
-app.wiretitan.test
-
-The configured TTL is 30 seconds.
-
-The relevant dnsmasq configuration is:
-
-```conf
-address=/app.wiretitan.test/10.7.3.20
+```
 local-ttl=30
+address=/app.wiretitan.test/10.7.3.20
+address=/api.wiretitan.test/10.7.3.20
 ```
 
-The address record was changed during the migration process.
+## Tests Performed
 
-The DNS configuration was also tested with the alternative edge address.
+### TTL Verification
 
-## 3. DNS Verification
+Ran `dig @127.0.0.1 app.wiretitan.test` on Mac 1 during the Extension E edge migration test when the record temporarily pointed to `10.7.10.202`.
 
-The DNS record was inspected using dig.
+Result: TTL=30 confirmed in the ANSWER SECTION.
 
-Example command:
+Evidence: `evidence/phase-2/extension-b/extension-b-ttl-30.png`
 
-```bash
-dig @127.0.0.1 app.wiretitan.test
-```
+### DNS Record Change
 
-The DNS response showed:
+Changed `address=/app.wiretitan.test/` from `10.7.3.20` to `10.7.10.202` during Extension E.
 
-- Query status: NOERROR
-- Answer record: app.wiretitan.test
-- TTL: 30 seconds
-- A record: 10.7.10.202 during the earlier configuration
+Verified on Mac 2 using `dscacheutil -q host -a name app.wiretitan.test`:
+- Before: `ip_address: 10.7.10.202`
+- After restore: `ip_address: 10.7.3.20`
 
-The DNS record was subsequently changed to the alternative edge address.
+Evidence: `evidence/phase-2/extension-b/extension-b-record-change.png`
 
-The updated record was also verified using DNS queries.
+## What Was NOT Demonstrated
 
-## 4. TTL Verification
+- A client retaining an old cached DNS answer for the full 30-second TTL period before accepting the new address.
+- Manual DNS cache flushing using `dscacheutil -flushcache`.
 
-The dnsmasq configuration was inspected to verify the TTL setting.
+## Status
 
-The local TTL was configured as 30 seconds.
-
-DNS queries confirmed that the resolver returned the configured TTL.
-
-## 5. DNS Migration
-
-The application hostname was migrated from the original edge address to the alternative edge address.
-
-The updated DNS response was verified.
-
-HTTPS access was tested after the migration.
-
-## 6. Actual Result
-
-The following were successfully verified:
-
-- dnsmasq configuration.
-- TTL value of 30 seconds.
-- DNS A-record changes.
-- DNS resolution of the application hostname.
-- Application access after DNS migration.
-
-## 7. Limitation
-
-The experiment did not demonstrate a client retaining an old cached DNS answer until its TTL expired.
-
-Therefore, the project confirms TTL configuration and DNS record migration, but does not claim that client-side cache-expiry behaviour was fully tested.
-
-## 8. Conclusion
-
-The DNS TTL extension successfully demonstrated configuration and DNS record verification.
-
-It also supported the edge migration process by allowing the application hostname to resolve to the alternative edge address.
+⚠️ **Partial** — TTL=30 configured and verified. DNS record changes verified. Client-side cache expiry was not observed.
