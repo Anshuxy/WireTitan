@@ -1,0 +1,60 @@
+
+# ==========================================
+# WireTitan - Git Ignore Configuration
+# ==========================================
+
+# Environment variables and secrets
+.env
+.env.*
+!.env.example
+
+# TLS private keys and certificates
+*.key
+*.pem
+*.p12
+*.pfx
+*.key.pem
+
+# Node.js dependencies
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+pnpm-debug.log*
+
+# Operating system files
+.DS_Store
+Thumbs.db
+
+# Editor and IDE files
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Logs
+*.log
+logs/
+
+# Temporary files
+*.tmp
+*.bak
+*.old
+
+# Runtime process files
+*.pid
+*.pid.lock
+
+# Cache directories
+.cache/
+.npm/
+.parcel-cache/
+
+# Build output
+dist/
+build/
+
+# Coverage reports
+coverage/
+
+# Local nginx cache
+nginx/cache/
